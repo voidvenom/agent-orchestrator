@@ -158,6 +158,8 @@ export function ComposerBackgroundTasks({ sessionId, reading }: { sessionId: str
 	const { t } = useTranslation();
 	const listId = useId();
 	const tasks = useMemo(() => composerBackgroundTasks(reading), [reading]);
+	// Parsed once per reading, not on every elapsed-time tick.
+	const names = useMemo(() => new Map(tasks.map((task) => [task, backgroundTaskName(task, t)])), [tasks, t]);
 	const live = tasks.filter(isLive);
 	const failedCount = tasks.length - live.length;
 	const now = useNow(tasks);
@@ -172,7 +174,7 @@ export function ComposerBackgroundTasks({ sessionId, reading }: { sessionId: str
 	}
 	if (!tasks.length) return null;
 
-	const name = (task: BackgroundTask) => backgroundTaskName(task, t);
+	const name = (task: BackgroundTask) => names.get(task) ?? "";
 	const time = (task: BackgroundTask) => {
 		if (failed === task.id) {
 			return <span role="status" className="shrink-0 text-[11px] text-destructive">{t("backgroundTasks.stopFailed")}</span>;
