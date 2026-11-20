@@ -80,18 +80,18 @@ describe("AgentModelCombobox", () => {
 
 		await userEvent.click(screen.getByRole("button", { name: "Worker model" }));
 
-		// A shared name shows its provider.
-		await userEvent.click(screen.getByRole("menuitem", { name: /deepseek-v4-pro\s*venice/ }));
+		// Every concrete model shows its exact ID under its label, so shared names stay distinct.
+		await userEvent.click(screen.getByText("venice/deepseek-v4-pro", { selector: "code" }).closest('[role="menuitem"]')!);
 		expect(onChange).toHaveBeenCalledWith("venice/deepseek-v4-pro");
 		await userEvent.click(screen.getByRole("button", { name: "Worker model" }));
-		expect(screen.getByRole("menuitem", { name: /deepseek-v4-pro\s*deepseek$/ })).toBeInTheDocument();
+		expect(screen.getByText("deepseek/deepseek-v4-pro", { selector: "code" })).toBeVisible();
 		// Where the provider repeats too, the full ID is what differs.
-		expect(screen.getByRole("menuitem", { name: /kimi\s*fireworks\/accounts\/team\/models\/kimi/ })).toBeInTheDocument();
+		expect(screen.getByText("fireworks/accounts/team/models/kimi", { selector: "code" })).toBeVisible();
 		// A long ID wraps too, or the part that differs would be cut off again.
-		const detail = screen.getByText("fireworks/accounts/team/models/kimi");
+		const detail = screen.getByText("fireworks/accounts/team/models/kimi", { selector: "code" });
 		expect(detail).toHaveClass("wrap-anywhere");
 		expect(detail).not.toHaveClass("truncate");
-		// A name that appears once stays on its own, with the full ID on hover.
+		// A name that appears once stays accessible by its label, with the full ID on hover and in code.
 		const unique = screen.getByRole("menuitem", { name: "only-here" });
 		expect(unique).toBeInTheDocument();
 		expect(screen.getByText("only-here")).toHaveAttribute("title", "venice/only-here");
@@ -304,7 +304,11 @@ describe("AgentModelCombobox", () => {
 	describe("Claude Code models", () => {
 		const claudeModels = ["Opus 4.5", "Opus 5.5", "Opus 4.8", "Haiku 4.5", "Sonnet 4.6", "Sonnet 5", "Fable 5", "Fable 5.1"]
 			.map((label) => ({ id: label.toLowerCase().replace(" ", "-"), label }));
-		const menuLabels = () => screen.getAllByRole("menuitem").map((item) => item.textContent);
+		const menuLabels = () => screen.getAllByRole("menuitem").map((item) => {
+			const label = item.cloneNode(true) as HTMLElement;
+			label.querySelector("code")?.remove();
+			return label.textContent;
+		});
 		const open = async (overrides: Parameters<typeof renderCombobox>[1] = {}) => {
 			renderCombobox(claudeModels, { compact: true, agentId: "claude-code", ...overrides });
 			await userEvent.click(screen.getByRole("button", { name: "Worker model" }));
@@ -580,18 +584,31 @@ describe("AgentModelCombobox", () => {
 		expect(groupLabels).toEqual(["Pinned models", "Recent"]);
 	});
 
-	it("shows machine IDs only when they disambiguate duplicate model names", async () => {
-		renderCombobox([
-			{ id: "gpt-5.6-sol", label: "GPT-5.6 Sol", provider: "OpenAI" },
-			{ id: "anthropic/opus-standard", label: "Opus", provider: "Anthropic" },
-			{ id: "anthropic/opus-long", label: "Opus", provider: "Anthropic" },
-		]);
+	it.each([true, false])("shows exact model IDs in compact=%s without duplicating literal labels", async (compact) => {
+		const first = "test-router/ag/example-argon-low";
+		const second = "test-router/ag/example-argon-high";
+		const { onChange } = renderCombobox([
+			{ id: first, label: "Example Argon", provider: "test-router" },
+			{ id: second, label: "Example Argon", provider: "test-router" },
+			{ id: "test-router/cx/gpt-example", label: "GPT Example", provider: "test-router" },
+			{ id: "test-router/literal", label: "test-router/literal", provider: "test-router" },
+			{ id: "auto", label: "Auto route" },
+			{ id: "default", label: "Default" },
+		], { agentId: "omp", compact });
 
 		await userEvent.click(screen.getByRole("button", { name: "Worker model" }));
-
-		expect(screen.queryByText("gpt-5.6-sol")).not.toBeInTheDocument();
-		expect(screen.getByText("anthropic/opus-standard")).toBeInTheDocument();
-		expect(screen.getByText("anthropic/opus-long")).toBeInTheDocument();
+		const low = screen.getByText(first, { selector: "code" }).closest('[role="menuitem"]')!;
+		const high = screen.getByText(second, { selector: "code" }).closest('[role="menuitem"]')!;
+		expect(low).toHaveAccessibleName("Example Argon");
+		expect(high).toHaveAccessibleName("Example Argon");
+		expect(low).toHaveAttribute("aria-description", first);
+		expect(high).toHaveAttribute("aria-description", second);
+		expect(screen.getByText("test-router/cx/gpt-example", { selector: "code" })).toBeVisible();
+		expect(screen.getAllByText("test-router/literal")).toHaveLength(1);
+		expect(screen.queryByText("auto", { selector: "code" })).not.toBeInTheDocument();
+		expect(screen.queryByText("default", { selector: "code" })).not.toBeInTheDocument();
+		await userEvent.click(high);
+		expect(onChange).toHaveBeenCalledWith(second);
 	});
 
 	it("searches the full catalog and groups matching models by provider", async () => {

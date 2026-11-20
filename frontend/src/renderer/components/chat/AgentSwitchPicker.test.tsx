@@ -177,6 +177,25 @@ describe("AgentModelPicker", () => {
 		expect(labels).toEqual([expect.stringContaining("Opus 5.5"), expect.stringContaining("Sonnet 4.5"), expect.stringContaining("Opus 4.5")]);
 	});
 
+	it("shows the exact OMP model IDs when browsing and searching identically named choices", async () => {
+		const user = userEvent.setup();
+		const first = "test-router/ag/example-argon-low";
+		const second = "test-router/ag/example-argon-high";
+		const { current } = open(undefined, false, "omp", {
+			modelId: first,
+			modelLabel: "Example Argon",
+			models: [{ id: first, label: "Example Argon" }, { id: second, label: "Example Argon" }],
+		});
+		await user.click(screen.getByRole("button", { name: /Agent, model and reasoning effort/ }));
+		const row = (id: string) => screen.getByRole("menuitemradio", { name: new RegExp(id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+		expect(row(first)).toBeInTheDocument();
+		expect(row(second)).toBeInTheDocument();
+		await user.type(screen.getByRole("searchbox"), "argon");
+		const high = row(second);
+		await user.click(high);
+		expect(current.onPickModel).toHaveBeenCalledWith(second);
+	});
+
 	it.each(["Opus", "Sonnet"])("closes the menu after picking model %s", async (model) => {
 		const user = userEvent.setup();
 		const { current } = open();
@@ -311,7 +330,11 @@ describe("AgentModelPicker", () => {
 		// Model rows and group headings, in the order they are drawn.
 		const order = [...menu.querySelectorAll("*")]
 			.filter((node) => node.getAttribute("role") === "menuitemradio" || (node.children.length === 0 && ["Alpha", "Beta"].includes(node.textContent ?? "")))
-			.map((node) => node.textContent?.trim().split(/\s/)[0]);
+			.map((node) => {
+				const copy = node.cloneNode(true) as HTMLElement;
+				copy.querySelector("code")?.remove();
+				return copy.textContent?.trim().split(/\s/)[0];
+			});
 		expect(order).toEqual(["Three", "Alpha", "One", "Two"]);
 	});
 

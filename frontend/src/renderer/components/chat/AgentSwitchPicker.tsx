@@ -49,6 +49,7 @@ import { CloseButton } from "../ui/close-button";
 import { Pressable } from "../ui/pressable";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ModelMenuChoices } from "./ModelMenuChoices";
+import { ModelChoiceName, modelChoiceIDHint } from "../settings/ModelChoiceName";
 import { ProviderMark } from "./ProviderMark";
 import { useCloudAgentCatalogOptions } from "../../hooks/useCloudModelCatalog";
 
@@ -669,6 +670,7 @@ export function AgentModelPicker({
 								row={row}
 								optionId={optionID?.(row.id)}
 								active={row.harness === shownHarness && row.model.id === source.modelId}
+								displayID={row.harness === shownHarness && row.model.id === source.modelId ? source.sendId : undefined}
 								searchActive={row.id === searchActiveID}
 								disabled={!searchPickable(row)}
 								onPick={pickFromSearch}
@@ -684,6 +686,7 @@ export function AgentModelPicker({
 										// The model listed first sits above the group headings; the rest keep theirs.
 										const previous = listed[index - 1];
 										const heading = model.group && model !== leadRow && (previous?.model === leadRow || model.group !== previous?.model.group);
+										const idHint = modelChoiceIDHint((active ? source.sendId : undefined) ?? model.sendId ?? model.id, model.label);
 										return (
 											<Fragment key={row.id}>
 												{heading ? (
@@ -693,6 +696,7 @@ export function AgentModelPicker({
 													active={active}
 													radio
 													disabled={!source.onPickModel || !usable(shownHarness) || Boolean(model.unavailableReason)}
+													aria-description={idHint}
 													// A pick closes the menu, as a search match does; a terminal's stays open for its Switch button.
 													onSelect={(event) => {
 														stayOpen(event);
@@ -700,12 +704,9 @@ export function AgentModelPicker({
 													}}
 													className="text-xs text-foreground"
 												>
-													{model.unavailableReason ? (
-														<span className="min-w-0">
-															<span className="block truncate">{model.label}</span>
-															<span className="block whitespace-normal text-[10px] text-muted-foreground">{model.unavailableReason}</span>
-														</span>
-													) : <span className="min-w-0 truncate">{model.label}</span>}
+													<ModelChoiceName label={model.label} idHint={idHint}>
+														{model.unavailableReason ? <span className="block whitespace-normal text-[10px] text-muted-foreground">{model.unavailableReason}</span> : null}
+													</ModelChoiceName>
 													{model.hint ? <span className="ml-2 shrink-0 text-[10px] text-muted-foreground/70">{model.hint === "default" ? t("agentSwitch.defaultModel") : model.hint}</span> : null}
 												</OptionMenuItem>
 											</Fragment>
@@ -1059,18 +1060,21 @@ function claudeOrder<T extends { id: string; label: string }>(models: T[]): T[] 
 	return [...current, ...other];
 }
 
-const SearchRow = memo(function SearchRow({ row, optionId, active, searchActive, disabled, onPick }: {
+const SearchRow = memo(function SearchRow({ row, optionId, active, displayID, searchActive, disabled, onPick }: {
 	row: { id: string; harness: string; model: PickerModel };
 	optionId?: string;
 	active: boolean;
+	displayID?: string;
 	searchActive: boolean;
 	disabled: boolean;
 	onPick: (event: Event, harness: string, id: string) => void;
 }) {
 	const { t } = useTranslation();
+	const idHint = modelChoiceIDHint(displayID ?? row.model.sendId ?? row.model.id, row.model.label);
 	return (
 		<OptionMenuItem
 			id={optionId}
+			aria-description={idHint}
 			active={active}
 			searchActive={searchActive}
 			radio
@@ -1079,7 +1083,7 @@ const SearchRow = memo(function SearchRow({ row, optionId, active, searchActive,
 			// Indented to start under its agent's name, past the agent's mark, so it reads as that agent's.
 			className="pl-[26px] text-xs text-foreground"
 		>
-			<span className="min-w-0 truncate" title={row.model.unavailableReason}>{row.model.label}</span>
+			<ModelChoiceName label={row.model.label} idHint={idHint} title={row.model.unavailableReason} />
 			{/* Drawn as the group's heading; read with the row, so a match names its agent. */}
 			<span className="sr-only">{t("agentSwitch.favoriteAgent", { agent: agentLabel(row.harness) })}</span>
 		</OptionMenuItem>
