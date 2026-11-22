@@ -1,3 +1,4 @@
+import { manualLinuxUpdates } from "../../../shared/manual-linux-updates";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Download, Info, Loader2, RefreshCw } from "@/components/app-icons";
@@ -44,6 +45,7 @@ export function UpdatesSection({ titleHidden }: { titleHidden?: boolean } = {}) 
 	const queryClient = useQueryClient();
 	const query = useQuery({
 		queryKey: updateSettingsQueryKey,
+		enabled: !manualLinuxUpdates,
 		queryFn: () => aoBridge.updateSettings.get(),
 		refetchInterval: 3_000,
 	});
@@ -127,6 +129,7 @@ export function UpdatesSection({ titleHidden }: { titleHidden?: boolean } = {}) 
 	}, [query.data]);
 
 	useEffect(() => {
+		if (manualLinuxUpdates) return;
 		const requestId = autoProgressRef.current;
 		if (!requestId || status.requestId !== requestId) return;
 		if (handledStatusRef.current === status.state) return;
@@ -246,6 +249,7 @@ export function UpdatesSection({ titleHidden }: { titleHidden?: boolean } = {}) 
 
 	const activeQuery = useQuery({
 		queryKey: ["feature-active"],
+		enabled: !manualLinuxUpdates,
 		queryFn: () => aoBridge.featureBuilds.getActive(),
 	});
 	const activeBuild = activeQuery.data ?? null;
@@ -263,7 +267,7 @@ export function UpdatesSection({ titleHidden }: { titleHidden?: boolean } = {}) 
 					channelSwitch={channelSwitch}
 				/>
 
-				{featurePr != null && (
+				{!manualLinuxUpdates && featurePr != null && (
 					<SettingsRow
 						label={activeBuild
 							? t("settings.updates.onFeatureBuild", { pr: featurePr })
@@ -277,59 +281,61 @@ export function UpdatesSection({ titleHidden }: { titleHidden?: boolean } = {}) 
 				)}
 			</SettingsSection>
 
-			<SettingsSection title={t("settings.updates.preferencesSection")} grouped>
-				<SettingsRow
-					label={t("settings.updates.automatic")}
-					description={t("settings.updates.automaticHelp")}
-				>
-					<Switch
-						aria-label={t("settings.updates.automatic")}
-						checked={form.enabled}
-						onCheckedChange={setEnabled}
-						disabled={savingField === "automatic"}
-					/>
-				</SettingsRow>
+			{!manualLinuxUpdates && (
+				<SettingsSection title={t("settings.updates.preferencesSection")} grouped>
+					<SettingsRow
+						label={t("settings.updates.automatic")}
+						description={t("settings.updates.automaticHelp")}
+					>
+						<Switch
+							aria-label={t("settings.updates.automatic")}
+							checked={form.enabled}
+							onCheckedChange={setEnabled}
+							disabled={savingField === "automatic"}
+						/>
+					</SettingsRow>
 
-				<SettingsRow
-					label={t("settings.updates.channel")}
-					description={
-						<>
-							{t("settings.updates.channelHelp")}
-							{primaryValue === "nightly" && (
-								// A standing property of the chosen channel, not an alert:
-								// --color-warning is one step from --destructive, and a
-								// permanent note in it read as a permanent failure. Red is
-								// kept for states that are actually broken and actionable.
-								<span className="nightly-warning mt-1 flex items-start gap-1.5">
-									<Info className="mt-0.5 size-icon-sm shrink-0" aria-hidden="true" />
-									<span className="min-w-0">{t("settings.updates.nightlyWarning")}</span>
-								</span>
-							)}
-						</>
-					}
-				>
-					<SettingsOptionMenu
-						aria-label={t("settings.updates.channel")}
-						value={primaryValue}
-						options={developerMode ? channelOptions : channelOptions.filter((option) => option.value !== "feature")}
-						onChange={handlePrimaryChannel}
-						disabled={savingField === "channel"}
-					/>
-				</SettingsRow>
+					<SettingsRow
+						label={t("settings.updates.channel")}
+						description={
+							<>
+								{t("settings.updates.channelHelp")}
+								{primaryValue === "nightly" && (
+									// A standing property of the chosen channel, not an alert:
+									// --color-warning is one step from --destructive, and a
+									// permanent note in it read as a permanent failure. Red is
+									// kept for states that are actually broken and actionable.
+									<span className="nightly-warning mt-1 flex items-start gap-1.5">
+										<Info className="mt-0.5 size-icon-sm shrink-0" aria-hidden="true" />
+										<span className="min-w-0">{t("settings.updates.nightlyWarning")}</span>
+									</span>
+								)}
+							</>
+						}
+					>
+						<SettingsOptionMenu
+							aria-label={t("settings.updates.channel")}
+							value={primaryValue}
+							options={developerMode ? channelOptions : channelOptions.filter((option) => option.value !== "feature")}
+							onChange={handlePrimaryChannel}
+							disabled={savingField === "channel"}
+						/>
+					</SettingsRow>
 
-				{primaryValue === "feature" && (
-					<FeatureBuildsSelect
-						currentPr={form.feature?.pr ?? null}
-						onPin={(pr, title) => setPendingPin({ pr, title })}
-					/>
-				)}
+					{primaryValue === "feature" && (
+						<FeatureBuildsSelect
+							currentPr={form.feature?.pr ?? null}
+							onPin={(pr, title) => setPendingPin({ pr, title })}
+						/>
+					)}
 
-				{save.isError && (
-					<p role="alert" className="settings-content-row text-xs text-error">
-						{save.error instanceof Error ? save.error.message : t("settings.updates.saveFailed")}
-					</p>
-				)}
-			</SettingsSection>
+					{save.isError && (
+						<p role="alert" className="settings-content-row text-xs text-error">
+							{save.error instanceof Error ? save.error.message : t("settings.updates.saveFailed")}
+						</p>
+					)}
+				</SettingsSection>
+			)}
 			<ConfirmDialog
 				open={pendingPin !== null}
 				title={t("settings.updates.switchFeatureTitle")}

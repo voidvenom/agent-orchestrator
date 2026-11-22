@@ -23,6 +23,7 @@ import { checkMacDmgLayout } from "./scripts/build-mac-dmg.mjs";
 // workflows set AO_RELEASE_REPO to the repo they run in, and build-artifacts.yml
 // asserts the baked app-update.yml matches it, so a future org/repo rename
 // fails the build instead of stranding the fleet on a redirect (#3523).
+const MANUAL_LINUX_RELEASE_REPO = "voidvenom/agent-orchestrator";
 const DEFAULT_RELEASE_REPO = "Untrivial-ai/agent-orchestrator";
 
 // The packaged binary name (no extension). Single source of truth: the packager
@@ -264,6 +265,10 @@ const config: ForgeConfig = {
 		// and macOS reports the app as "damaged". owner/repo are baked from
 		// AO_RELEASE_REPO at build time.
 		prePackage: async (_forgeConfig, platform, arch) => {
+			const manualLinuxUpdates = process.env.VITE_AO_MANUAL_LINUX_UPDATES === "1";
+			if (manualLinuxUpdates && (platform !== "linux" || arch !== "x64" || process.env.AO_RELEASE_REPO !== MANUAL_LINUX_RELEASE_REPO)) {
+				throw new Error("Manual updates are only supported for the custom Linux x64 fork build.");
+			}
 			await prepareNativeDependencies(platform as NodeJS.Platform, arch);
 			if (platform === "darwin") {
 				const helperBuild = spawnSync(process.execPath, [path.resolve("scripts/build-update-helper.mjs"), "--arch", arch], { stdio: "inherit" });
@@ -281,7 +286,9 @@ const config: ForgeConfig = {
 				"provider: github",
 				`owner: ${owner}`,
 				`repo: ${name}`,
-				"updaterCacheDirName: agent-orchestrator-updater",
+				manualLinuxUpdates
+					? "updaterCacheDirName: voidvenom-agent-orchestrator-updater"
+					: "updaterCacheDirName: agent-orchestrator-updater",
 				"",
 			].join("\n");
 			writeFileSync("app-update.yml", yml);

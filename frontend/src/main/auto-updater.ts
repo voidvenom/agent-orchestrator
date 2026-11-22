@@ -1,4 +1,5 @@
 import { autoUpdater as stockAutoUpdater } from "electron-updater";
+import { manualLinuxUpdateRepo, manualLinuxUpdates } from "../shared/manual-linux-updates";
 import { StableGitHubProvider } from "./stable-github-provider";
 import { MacDifferentialV2Updater } from "./mac-differential-v2-updater";
 import macV2TrustedKeys from "../../scripts/mac-differential-v2-trust.json";
@@ -54,6 +55,11 @@ import {
 const autoUpdater = process.platform === "darwin" && macDifferentialRollout.enabled === true
   ? new MacDifferentialV2Updater({ trustedKeys: macV2TrustedKeys })
   : stockAutoUpdater;
+
+if (manualLinuxUpdates) {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+}
 
 const FAIL_CLOSED_UPDATE_SETTINGS: UpdateSettings = {
   enabled: false,
@@ -179,11 +185,12 @@ async function reconcileAndPersist(
 export function configureFeed(
   settings: Pick<UpdateSettings, "channel" | "feature">,
 ): void {
+  if (manualLinuxUpdates) settings = FAIL_CLOSED_UPDATE_SETTINGS;
   if (settings.channel === "latest" && !settings.feature) {
     directFeedReleaseNotes = undefined;
     directFeedDiscoveredAvailable = undefined;
   }
-  const coordinates = readAppUpdateYml();
+  const coordinates = manualLinuxUpdates ? manualLinuxUpdateRepo : readAppUpdateYml();
   if (coordinates) {
     autoUpdater.setFeedURL(settings.channel === "latest" && !settings.feature
       ? { provider: "custom", updateProvider: StableGitHubProvider, ...coordinates }
@@ -1150,7 +1157,7 @@ let stagedPersistenceQueue: Promise<unknown> = Promise.resolve();
 
 /** Persist in event order without blocking updater events. */
 function persistStagedBuild(stateDir: string | undefined): void {
-  if (stateDir === undefined || stagedVersion === undefined || stagedAtMs === undefined) return;
+  if (manualLinuxUpdates || stateDir === undefined || stagedVersion === undefined || stagedAtMs === undefined) return;
   const releaseNotes = stagedReleaseNotes;
   const payload = `${JSON.stringify({
     version: stagedVersion,
@@ -1167,7 +1174,7 @@ function persistStagedBuild(stateDir: string | undefined): void {
 }
 
 function forgetPersistedStagedBuild(stateDir: string | undefined): void {
-  if (stateDir === undefined) return;
+  if (manualLinuxUpdates || stateDir === undefined) return;
   stagedPersistenceQueue = stagedPersistenceQueue
     .then(() => unlink(stagedUpdateFile(stateDir)))
     .catch(() => undefined);
@@ -1652,6 +1659,7 @@ async function requestRetirementPoll(stateDir: string): Promise<void> {
 }
 
 async function runRetirementPoll(stateDir: string): Promise<void> {
+  if (manualLinuxUpdates) return;
   try {
     await runSerializedUpdaterOperation("settings-write", async () => {
       const before = await readUpdateSettings(stateDir);
@@ -2247,6 +2255,7 @@ function wireUpdaterEvents(): void {
     // Evaluate now (nightly can escalate immediately), then every 30 minutes
     // while the update sits uninstalled. unref so the timer never holds the
     // process open on quit.
+    if (manualLinuxUpdates) return;
     void runEscalationCheck();
     // Re-arming on a re-stage would push the next evaluation out by another 30
     // minutes every time a background check re-stages the same build, so the
@@ -2629,6 +2638,7 @@ function reconcileAutomaticUpdateSchedule(
   stateDir: string,
   settings: UpdateSettings,
 ): void {
+  if (manualLinuxUpdates) return;
   schedulePeriodicAutomaticUpdateCheck(
     stateDir,
     automaticUpdateCheckInterval(settings),
@@ -2656,6 +2666,7 @@ async function requestAutomaticUpdateCheck(
 // Caller guards on app.isPackaged.
 export async function startAutoUpdates(stateDir: string): Promise<void> {
   escalationStateDir = stateDir;
+  if (manualLinuxUpdates) return;
   restoreStagedBuild(stateDir);
   recordUpdateDiagnostic("automatic-updates-started", { stagedVersion, stagedAtMs });
   startRetirementPollTimer(stateDir);
@@ -2691,6 +2702,7 @@ export async function setUpdateSettings(
   stateDir: string,
   settings: UpdateSettings,
 ): Promise<void> {
+  if (manualLinuxUpdates) return;
   await runSerializedUpdaterOperation("settings-write", () =>
     persistUpdaterSettings(stateDir, settings),
   );
@@ -2738,10 +2750,12 @@ export async function checkForUpdatesNow(
     await runSerializedUpdaterOperation(
       "manual-check",
       async () => {
-        const requested = options.settings
-          ? await persistRendererUpdateSettings(stateDir, options.settings)
-          : await readUpdateSettings(stateDir);
-        const settings = await reconcileAndPersist(stateDir, requested);
+        const requested = manualLinuxUpdates
+          ? FAIL_CLOSED_UPDATE_SETTINGS
+          : options.settings
+            ? await persistRendererUpdateSettings(stateDir, options.settings)
+            : await readUpdateSettings(stateDir);
+        const settings = manualLinuxUpdates ? requested : await reconcileAndPersist(stateDir, requested);
         applyUpdaterPolicy(settings);
         reconcileAutomaticUpdateSchedule(stateDir, settings);
         configureFeed(settings);
@@ -2749,7 +2763,7 @@ export async function checkForUpdatesNow(
         // channel's build armed, and only staging the new one over it helps.
         const staleStaged = stagedBuildIsStale(settings);
         if (staleStaged) discardStagedBuild();
-        autoUpdater.autoDownload = !stagingDiskShortfall && (staleStaged || (hasStagedBuild() && !isNativeInstallReady()));
+        autoUpdater.autoDownload = !manualLinuxUpdates && !stagingDiskShortfall && (staleStaged || (hasStagedBuild() && !isNativeInstallReady()));
         applyInstallOnQuitPolicy();
         broadcastUpdaterStatus({ state: "checking" });
         const restoreFeed = await configureDirectPrereleaseFeed(settings);
@@ -2761,7 +2775,7 @@ export async function checkForUpdatesNow(
           // is still running.
           if (result?.downloadPromise) failed.phase = "download";
           await awaitStartedDownload(result);
-          if (!result?.downloadPromise && settings.enabled && !stagingDiskShortfall && result?.isUpdateAvailable &&
+          if (!manualLinuxUpdates && !result?.downloadPromise && settings.enabled && !stagingDiskShortfall && result?.isUpdateAvailable &&
               (!hasStagedBuild() || supersedesStagedBuild(result.updateInfo?.version))) {
             failed.phase = "download";
             activeUpdaterPhase = "download";
@@ -2819,6 +2833,7 @@ export async function returnToHome(
   stateDir: string,
   requestId?: string,
 ): Promise<void> {
+  if (manualLinuxUpdates) return;
   escalationStateDir = stateDir;
   wireUpdaterEvents();
   if (!app.isPackaged) {
@@ -2946,7 +2961,7 @@ export async function setMacDifferentialUpdates(
   stateDir: string,
   enabled: boolean,
 ): Promise<void> {
-  if (typeof enabled !== "boolean") return;
+  if (manualLinuxUpdates || typeof enabled !== "boolean") return;
   developerModeRequested = enabled;
   // Revoke eligibility synchronously, even while a previous operation is busy.
   // An already-started dependency download retains its captured options.
@@ -3023,7 +3038,7 @@ export function getMacInstallBlocker(): string | undefined {
 // the staged build wait for a location it can actually install from.
 function applyInstallOnQuitPolicy(): void {
   const blocker = getMacInstallBlocker();
-  autoUpdater.autoInstallOnAppQuit = blocker === undefined && !awaitingStagedReplacement && !nativePreparationBlocked && !stagingDiskShortfall;
+  autoUpdater.autoInstallOnAppQuit = !manualLinuxUpdates && blocker === undefined && !awaitingStagedReplacement && !nativePreparationBlocked && !stagingDiskShortfall;
   if (awaitingStagedReplacement) {
     console.info(
       "install-on-quit disabled until the replacement build is staged; the cached one belongs to a channel the user left",
@@ -3271,7 +3286,7 @@ async function prepareRememberedNonDarwinUpdate(): Promise<void> {
 // ensureUpdatePrefs prompts once (first run, before any settings file exists)
 // for auto-update opt-in + channel, with a nightly instability disclaimer.
 export async function ensureUpdatePrefs(stateDir: string): Promise<void> {
-  if (existsSync(path.join(stateDir, UPDATE_SETTINGS_FILE_NAME))) return;
+  if (manualLinuxUpdates || existsSync(path.join(stateDir, UPDATE_SETTINGS_FILE_NAME))) return;
 
   const installedNightly = installedUpdateChannel() === "nightly";
   const optIn = await dialog.showMessageBox({
