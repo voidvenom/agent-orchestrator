@@ -1,6 +1,7 @@
 import { autoUpdater as stockAutoUpdater } from "electron-updater";
-import { manualLinuxUpdateRepo, manualLinuxUpdates } from "../shared/manual-linux-updates";
+import { manualLinuxUpdates } from "../shared/manual-linux-updates";
 import { StableGitHubProvider } from "./stable-github-provider";
+import { ForkAppImageProvider } from "./fork-appimage-provider";
 import { MacDifferentialV2Updater } from "./mac-differential-v2-updater";
 import macV2TrustedKeys from "../../scripts/mac-differential-v2-trust.json";
 import macDifferentialRollout from "../../scripts/mac-differential-rollout.json";
@@ -186,11 +187,15 @@ export function configureFeed(
     directFeedReleaseNotes = undefined;
     directFeedDiscoveredAvailable = undefined;
   }
-  const coordinates = manualLinuxUpdates ? manualLinuxUpdateRepo : readAppUpdateYml();
-  if (coordinates) {
-    autoUpdater.setFeedURL(settings.channel === "latest" && !settings.feature
-      ? { provider: "custom", updateProvider: StableGitHubProvider, ...coordinates }
-      : { provider: "github", ...coordinates });
+  if (manualLinuxUpdates) {
+    autoUpdater.setFeedURL({ provider: "custom", updateProvider: ForkAppImageProvider });
+  } else {
+    const coordinates = readAppUpdateYml();
+    if (coordinates) {
+      autoUpdater.setFeedURL(settings.channel === "latest" && !settings.feature
+        ? { provider: "custom", updateProvider: StableGitHubProvider, ...coordinates }
+        : { provider: "github", ...coordinates });
+    }
   }
   if (settings.feature !== null && settings.feature !== undefined) {
     // Feature build: pin to the pr<N> semver prerelease identifier channel.
