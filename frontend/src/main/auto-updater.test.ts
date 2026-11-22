@@ -5615,9 +5615,10 @@ describe("custom Linux manual-only updates", () => {
       });
       await module.checkForUpdatesNow(stateDir, { settings: staleSettings });
       expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
-      expect(autoUpdater.setFeedURL).toHaveBeenLastCalledWith(expect.objectContaining({
-        owner: "voidvenom", repo: "agent-orchestrator",
-      }));
+      const { ForkAppImageProvider } = await import("./fork-appimage-provider");
+      expect(autoUpdater.setFeedURL).toHaveBeenLastCalledWith({
+        provider: "custom", updateProvider: ForkAppImageProvider,
+      });
       expect(autoUpdater.channel).toBe("latest");
       expect(autoUpdater.allowPrerelease).toBe(false);
       expect(autoUpdater.autoDownload).toBe(false);
