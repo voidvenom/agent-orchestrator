@@ -5583,3 +5583,50 @@ it("keeps expected update outages out of handled captures and reports genuine fa
     expect(sink).toHaveBeenCalledTimes(2);
   } finally { resetMainErrorCaptureForTests(); }
 });
+
+describe("custom Linux manual-only updates", () => {
+  it("does not check at startup, rearm timers, download on check, or install on quit", async () => {
+    vi.stubEnv("VITE_AO_MANUAL_LINUX_UPDATES", "1");
+    const interval = vi.spyOn(globalThis, "setInterval");
+    try {
+      const staleSettings: UpdateSettings = {
+        enabled: true, channel: "nightly", nightlyAck: true, feature: { pr: 8759 },
+      };
+      const { module, autoUpdater, updaterEvents, dialog } = await importAutoUpdater(staleSettings);
+      await module.ensureUpdatePrefs(stateDir);
+      await module.startAutoUpdates(stateDir);
+      await module.setUpdateSettings(stateDir, staleSettings);
+      await module.returnToHome(stateDir);
+      expect(dialog.showMessageBox).not.toHaveBeenCalled();
+      expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+
+      autoUpdater.checkForUpdates.mockResolvedValue({
+        isUpdateAvailable: true, updateInfo: { version: "0.15.4" },
+      });
+      await module.checkForUpdatesNow(stateDir, { settings: staleSettings });
+      expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+      expect(autoUpdater.setFeedURL).toHaveBeenLastCalledWith(expect.objectContaining({
+        owner: "voidvenom", repo: "agent-orchestrator",
+      }));
+      expect(autoUpdater.channel).toBe("latest");
+      expect(autoUpdater.allowPrerelease).toBe(false);
+      expect(autoUpdater.autoDownload).toBe(false);
+      expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+      expect(interval).not.toHaveBeenCalled();
+
+      autoUpdater.downloadUpdate.mockImplementation(async () => {
+        updaterEvents.get("update-downloaded")?.({ version: "0.15.4" });
+      });
+      await module.downloadUpdateNow();
+      expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+      expect(autoUpdater.autoInstallOnAppQuit).toBe(false);
+      expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+      await module.quitAndInstallUpdate();
+      expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    } finally {
+      interval.mockRestore();
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+});

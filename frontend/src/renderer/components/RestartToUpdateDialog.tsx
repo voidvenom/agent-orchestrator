@@ -1,3 +1,4 @@
+import { manualLinuxUpdates } from "../../shared/manual-linux-updates";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "@/components/app-icons";
 import { useTranslation } from "react-i18next";
@@ -233,7 +234,7 @@ function RestartToUpdateDialogBody() {
 					)}
 					{/* On failure the main process turns off install-on-quit, so hide
 					    this line rather than contradict the error above. */}
-					{failureDetail === null && (
+					{!manualLinuxUpdates && failureDetail === null && (
 						<p className="text-xs leading-4 text-settings-muted">{t("update.restart.installsOnQuit")}</p>
 					)}
 				</div>
