@@ -10038,6 +10038,8 @@ export interface components {
             /** @enum {string} */
             provider: "claude" | "codex";
             secret?: string;
+            /** Format: uuid */
+            workspaceId?: string;
         };
         StartAgentAccountLoginResponse: {
             account?: components["schemas"]["AgentAccountResponse"];
